@@ -1,0 +1,431 @@
+%Set scatter matrix
+clear Lay Int
+S.plot = 1;
+S.SM = 1;
+
+%%%%%% First Run in order to save scatter matrix
+load('AFM.mat','pyramids_20um')  %load 20x20um height map
+%height map of typical pyramid texture (~5um pyramid size)
+
+%===LAYERS===
+Lay(1).med = 'air';              Lay(1).thi = inf;
+Lay(2).med = 'c-Si';             Lay(2).thi = 200;
+Lay(3).med = 'air';              Lay(3).thi = inf;
+
+%===INTERFACES===
+
+Int(1).coat(1).med = 'air';             Int(1).coat(1).thi = 0.15;  
+Int(1).coat(2).med = 'ITO';             Int(1).coat(2).thi = 0.15;  
+Int(1).coat(3).med = 'spiro-OMeTAD';    Int(1).coat(3).thi = 0.15;  
+Int(1).coat(4).med = 'perovskite';      Int(1).coat(4).thi = 0.3;  
+Int(1).coat(5).med = 'PTAA';            Int(1).coat(5).thi = 0.15;  
+Int(1).coat(6).med = 'a-SiOx';          Int(1).coat(6).thi = 0.15;  
+Int(1).coat(7).med = 'a-Si(n)';         Int(1).coat(7).thi = 0.005;  
+Int(1).coat(8).med = 'a-Si(i)';         Int(1).coat(8).thi = 0.005; 
+%---
+
+%%%%%%%%
+Int(2).model = 'ray';            %use RAY-optics model
+Int(2).Z = -pyramids_20um;       Int(2).xy = [20,20];        %20x20um map
+%minus was added to get upside-down height map for rear
+%Leave this part for the other scatter matrix
+%%%%%%%
+
+Int(2).coat(1).med = 'a-Si(i)';  Int(2).coat(1).thi = 0.005;
+Int(2).coat(2).med = 'a-Si(n)';  Int(2).coat(2).thi = 0.005;
+Int(2).coat(3).med = 'Ag';       Int(2).coat(3).thi = 0.300;
+%===
+
+%---override default settings (see 'gp4_settings.m')---
+%S.wav = 0.300:0.050:1.200;       %wavelengths [um]
+S.SM = 1;                        %output SM (see example4)
+
+[Lay,Int,out] = GENPRO4(Lay,Int,S);  %'S' is 3rd input
+setGlobalScatter(Int(2).SM)
+
+
+%%%%%%%%%%%%%%%% NOTE %%%%%%%%%%%%%%%%%%%%%%%%
+%Code code for other scatter matrix is analogous, we only leave out the parts for the pyramid structure, and Int becomes Int2
+
+
+
+function[tc]=tscWdisc(c) 
+    %continuous variables
+    cwid1 = c(1);
+    cwid2 = c(2);
+    cwid3 = c(3);
+    cwid4 = c(4);
+    cwid5 = c(5);
+    cwid6 = c(6);
+    %discrete variables
+    cl1 = coatl1(c(7));
+    cl2 = coatl2(c(8));
+    exl = extral(c(9));
+    pyr = c(10);
+    
+    
+    %get globals
+    Fval = getGlobalFval;
+    
+    
+    %adjust settings of GenPro4, use this for reusing scatter matrices
+    S.plot = 1;
+    S.SM = 1;
+    
+    %If statement for using pyrimid structure, two full cases are now described Considering two cases is important for the reuse of scatter matrices
+    if pyr >= 1.5
+        load ('AFM.mat','pyramids_20um')
+        %===LAYERS===
+        Lay(1).med = 'air';                     Lay(1).thi = inf;
+        Lay(2).med = 'c-Si';                    Lay(2).thi = 200;
+        Lay(3).med = 'air';                     Lay(3).thi = inf;
+        
+        %===INTERFACES===
+        Int(1).coat(1).med = exl;            Int(1).coat(1).thi = cwid1;  
+        Int(1).coat(2).med = 'ITO';             Int(1).coat(2).thi = cwid2; 
+        Int(1).coat(3).med = cl1;            Int(1).coat(3).thi = cwid3;  
+        Int(1).coat(4).med = 'perovskite';      Int(1).coat(4).thi = cwid4;
+        Int(1).coat(5).med = cl2;             Int(1).coat(5).thi = cwid5;  
+        Int(1).coat(6).med = 'a-SiOx';          Int(1).coat(6).thi = cwid6;  
+        Int(1).coat(7).med = 'a-Si(n)';         Int(1).coat(7).thi = 0.005;  
+        Int(1).coat(8).med = 'a-Si(i)';         Int(1).coat(8).thi = 0.005;  
+
+        Int(2).model = 'ray';            %use RAY-optics model
+        Int(2).Z = -pyramids_20um;       Int(2).xy = [20,20];        %20x20um map
+        
+        Int(2).coat(1).med = 'a-Si(i)';         Int(2).coat(1).thi = 0.005;
+        Int(2).coat(2).med = 'a-Si(n)';         Int(2).coat(2).thi = 0.005;
+        Int(2).coat(3).med = 'Ag';              Int(2).coat(3).thi = 0.300;
+        Int(2).SM = getGlobalScatter; %get the scatter matrix
+
+        [Lay,Int] = GENPRO4(Lay,Int,S);           %run simulation
+
+        %Set dummy current
+        tcsub = -min(Lay(2).cur,Int(1).coat(4).cur); %tandem current [mA/cm2]
+
+        %if the current is better than the best at this time, run the
+        %simulation x amount of times and take the average and compare it again
+        if tcsub < Fval
+            aver = zeros(10,1);
+            for i = 1:10
+                [Lay,Int] = GENPRO4(Lay,Int,S);           %run simulation
+                aver(i) = -min(Lay(2).cur,Int(1).coat(4).cur); 
+            end
+            tc = mean(aver);
+            if tc < Fval
+                setGlobalFval(tc);
+            else
+                tc = tcsub;
+            end
+        else
+            tc = tcsub;
+        end
+        title(['tandem current: ',num2str(tc,'%5.2f'),' mA/cm^2'])
+            
+    else
+        %===LAYERS===
+        Lay(1).med = 'air';                     Lay(1).thi = inf;
+        Lay(2).med = 'c-Si';                    Lay(2).thi = 200;
+        Lay(3).med = 'air';                     Lay(3).thi = inf;
+        
+        %===INTERFACES===
+        
+        %Note that here Int2 is used instead of Int, this is done in order to
+        %mark the difference of the scatter matrices
+        Int2(1).coat(1).med = exl;               Int2(1).coat(1).thi = cwid1;  
+        Int2(1).coat(2).med = 'ITO';             Int2(1).coat(2).thi = cwid2; 
+        Int2(1).coat(3).med = cl1;               Int2(1).coat(3).thi = cwid3;  
+        Int2(1).coat(4).med = 'perovskite';      Int2(1).coat(4).thi = cwid4;
+        Int2(1).coat(5).med = cl2;               Int2(1).coat(5).thi = cwid5;  
+        Int2(1).coat(6).med = 'a-SiOx';          Int2(1).coat(6).thi = cwid6;  
+        Int2(1).coat(7).med = 'a-Si(n)';         Int2(1).coat(7).thi = 0.005;  
+        Int2(1).coat(8).med = 'a-Si(i)';         Int2(1).coat(8).thi = 0.005;  
+        
+        %No pyramid structure, the remaining code is the same as before the 'else'
+        Int2(2).coat(1).med = 'a-Si(i)';         Int2(2).coat(1).thi = 0.005;
+        Int2(2).coat(2).med = 'a-Si(n)';         Int2(2).coat(2).thi = 0.005;
+        Int2(2).coat(3).med = 'Ag';              Int2(2).coat(3).thi = 0.300;
+        Int(2).SM = getGlobalScatter2; %get the scatter matrix
+        
+
+        [Lay,Int2] = GENPRO4(Lay,Int2,S); 
+
+        tcsub = -min(Lay(2).cur,Int2(1).coat(4).cur);
+
+        if tcsub < Fval
+            aver = zeros(10,1);
+            for i = 1:10
+                [Lay,Int2] = GENPRO4(Lay,Int2,S); 
+                aver(i) = -min(Lay(2).cur,Int2(1).coat(4).cur); 
+            end
+            tc = mean(aver);
+            if tc < Fval
+                setGlobalFval(tc);
+            else
+                tc = tcsub;
+            end
+        else
+            tc = tcsub;
+        end
+        title(['tandem current: ',num2str(tc,'%5.2f'),' mA/cm^2'])
+            
+    end
+end
+
+function [cl1] = coatl1(x)
+    %Material for coating layer 1
+    x = round(x);
+    if x == 1
+        cl1 = 'spiro-OMeTAD';
+    elseif x == 2
+        cl1 = 'FTO';
+    elseif x==3
+        cl1 = 'TiO2';
+    end
+end
+
+
+function [cl2] = coatl2(x)
+    %Material for coating layer 2
+    x = round(x);
+    if x == 1
+        cl2 = 'PTAA';
+    elseif x == 2
+        cl2 = 'NiO';
+    end
+end
+
+
+function [el] = extral(x)  
+    %Determine extra layer or not
+    x = round(x);
+    if x == 1
+        el = 'air';
+    elseif x == 2
+        el = 'MgF2';
+    end
+end
+
+%Initialization of the simulated annealing algorithm
+
+%objective function
+fun = @tscWdisc;
+%lower and upper bounds
+lb = [0.04,0.04,0.04,0.04,0.04,0.04,0.5,0.5,0.5,1];
+ub = [0.5,0.5,0.5,0.6,0.5,0.5,3.5,2.5,2.5,2];
+%initial cons and extra options:
+x0 = [0.15,0.15,0.15,0.3,0.15,0.15,3,1,1,2];
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%Code to calculate initial temperature
+%we run this code seperately once, since we need to change the sign of the objective funcion in tscWdisc
+%note: edit the sign of the current in the objective function file
+loops = 100; %amount of times we calculate one step
+A = zeros(loops,1);
+initialaccept = 0.8;
+%random initial fval:
+options = optimoptions(@simulannealbnd,'InitialTemperature',30,'TemperatureFcn',@tempfunc,'AcceptanceFcn',@acceptfun2,'AnnealingFcn',@MYannealing,'MaxFunctionEvaluations',2);
+[x, fval, exitflag, output] = simulannealbnd(fun,x0,lb,ub,options);
+intf = fval;
+for i=1:loops 
+    [x, fval, exitflag, output] = simulannealbnd(fun,x0,lb,ub,options);
+    A(i) = fval;
+    display(A(i))
+end
+
+B = A;
+%delete the non strictly worse solutions
+rowsToDelete = B > intf;
+B(rowsToDelete) = [];
+
+InTemp = -(sum(-B+intf))/numel(B)/log(initialaccept);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+% Set the options
+options = optimoptions(@simulannealbnd, 'PlotFcn',{'saplottemperature','saplotf','saplotbestf','saplotx'},'ReannealInterval',800,'InitialTemperature',14,'TemperatureFcn',@tempfunc,'AcceptanceFcn',@acceptfun2,'AnnealingFcn',@MYannealing,'MaxIterations',4000,'MaxFunctionEvaluations',4000);
+
+% Run simulated annealing
+[x, fval, exitflag, output] = simulannealbnd(fun,x0,lb,ub,options);
+
+
+function acceptpoint = acceptfun2(optimValues,newx,newfval)
+% Acceptance function
+
+%   Copyright 2006-2015 The MathWorks, Inc.
+%   EDIT: Pim van de Lest May-2021
+
+delE = newfval - optimValues.fval;
+
+% If the new point is better accept it
+if delE < 0
+    acceptpoint = true;
+% Otherwise, accept it randomly based on a Boltzmann probability density
+else
+    h = 1/(exp(delE/max(optimValues.temperature)));
+    if h > rand
+        acceptpoint = true;
+    else
+        acceptpoint = false;
+    end
+end
+
+function temperature = tempfunc(optimValues,options)
+% Temperature function
+
+%   Copyright 2006-2015 The MathWorks, Inc.
+%   Edited by Pim van de Lest
+
+currentx = optimValues.x;
+nvar = numel(currentx);
+%Get global values:
+ReAn = getGlobalReAn;
+Fval = getGlobalFval;
+
+if ReAn == 0
+    if floor(optimValues.iteration/(1*(nvar-3))) == optimValues.iteration/(1*(nvar-3))
+        temperature = optimValues.temperature.*0.95;
+    else
+        temperature = optimValues.temperature;
+    end
+elseif optimValues.temperature > 1
+    if floor(optimValues.iteration/((7))) == optimValues.iteration/((7))
+        temperature = optimValues.temperature.*0.95;
+    else
+        temperature = optimValues.temperature;
+    end
+else
+    if floor(optimValues.iteration/((10))) == optimValues.iteration/((10))
+        temperature = optimValues.temperature.*0.970;
+    else
+        temperature = optimValues.temperature;
+    end
+    %reanneal
+    if floor(optimValues.iteration/((800))) == optimValues.iteration/((800))
+        temperature = optimValues.temperature.*options.InitialTemperature/(3*optimValues.iteration/1000);
+    end
+end
+
+%Check if we need to Reanneal, this will happen once
+TempCheck1 = optimValues.temperature < 0.05;
+if ReAn ==0 && sum(TempCheck1) ~= 0
+    temperature = options.InitialTemperature;
+    setGlobalReAn(1)
+end
+
+%The global variable of the function values is until here -100
+%This is done because at the start we do not want to test every beter
+%solution multiple times
+%Fval < -99 has to be here otherwise the function setGlovalFval will be called every
+%iteration.
+TempCheck2 = optimValues.temperature < 0.05;
+if ReAn == 1 && Fval < -99 && sum(TempCheck2) ~= 0 
+    setGlobalFval(optimValues.bestfval)
+end
+
+
+function newx = MYannealing(optimValues,problem)
+%Function to generate a new solution
+%   Copyright 2006-2015 The MathWorks, Inc.
+%   Edited by Pim van de Lest, May 2021
+
+rng('shuffle');
+ReAn = getGlobalReAn;
+currentx = optimValues.x;
+currentT = optimValues.temperature;
+nvar = numel(currentx);
+newx = currentx;
+y = normrnd(0,1,[nvar,1]);
+y = y./norm(y);
+newx(:) = currentx(:) + (currentT).^(1/4).*y;
+lb = problem.lb;
+ub = problem.ub;
+
+%probability that after reannealing the algorithm will allow worse discrete
+%values
+k = 0.2;
+
+%create a chance such that the discrete variables are equal to the ones of
+%the best solution after reannealing
+if ReAn ==0
+    for i = 1:(nvar-6)
+        newx(i+6) = (ub(i+6)-lb(i+6)).*rand + lb(i+6);
+    end
+elseif ReAn ==1 && currentT(1) > k
+     a = rand;
+     if a > k
+         for i = 1:(nvar-6)
+             newx(i+6) = optimValues.bestx(i+6);
+         end
+     else
+        for i = 1:(nvar-6)
+            newx(i+6) = (ub(i+6)-lb(i+6)).*rand + lb(i+6);
+        end
+     end
+else
+     a1 = rand;
+     if a1 > 1-(1-currentT(1))
+         for i = 1:(nvar-6)
+             newx(i+6) = optimValues.bestx(i+6);
+         end
+     else
+        for i = 1:(nvar-6)
+            newx(i+6) = (ub(i+6)-lb(i+6)).*rand + lb(i+6);
+        end
+        
+     end
+end
+
+newx = sahonorboundstest(newx,optimValues,problem);
+
+
+function newx = sahonorboundstest(newx,optimValues,problem)
+%SAHONORBOUNDS ensures that the points that SIMULANNEAL  move forward with
+%   are always feasible.  It does so by checking to see if the given point
+%   is outside of the bounds, and then if it is, creating a point called
+%   which is on the bound that was being violated and then generating a new
+%   point on the line between the previous point and the projnewx. It is
+%   assumed that optimValues.x is within bounds.
+
+%   Copyright 2006-2010 The MathWorks, Inc.
+
+%   I have no edits in this Matlab code, i decided to include this because i did try multiple other codes to honor the bounds and this one kept being the better one.
+
+% Return if the problem is unbounded
+if ~problem.bounded
+    return
+end
+
+xin = newx; % Get the shape of input
+newx = newx(:); % make a column vector
+lb = problem.lb;
+ub = problem.ub;
+lbound = newx < lb;
+ubound = newx > ub;
+alpha = rand;
+% Project newx to the feasible region; get a random point as a convex
+% combination of proj(newx) and currentx (already feasible)
+if any(lbound) || any(ubound)
+    projnewx = newx;
+    projnewx(lbound) = lb(lbound);
+    projnewx(ubound) = ub(ubound);
+    newx = alpha*projnewx + (1-alpha)*optimValues.x(:);
+    % Reshape back to xin
+    newx = reshapeinputtest(xin,newx);
+else
+    newx = xin;
+end
+
+function setGlobalFval(x)
+    %Set global variable of the best function value, analogous for the scatter matrices and reannealing factor.
+    global Fval
+Fval = x;
+
+function val = getGlobalFval
+    %Get global variable of the best function value, analogous for the scatter matrices and reannealing factor.
+    global Fval
+val = Fval;
+
